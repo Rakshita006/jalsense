@@ -1,0 +1,15 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+dist/
+build/
+
+# Environment variables (API keys — never commit these)
+.env
+
+# OS files
+.DS_Store
