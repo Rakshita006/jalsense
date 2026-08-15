@@ -1,15 +1,45 @@
 # Python
-venv/
 __pycache__/
-*.pyc
-
-# Node
-node_modules/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
 dist/
 build/
 
-# Environment variables (API keys — never commit these)
-.env
+# Virtual Environments
+.venv/
+venv/
+env/
+whatsapp/.venv/
 
-# OS files
+# Environment Variables & Secrets (API keys — never commit these)
+.env
+*.env.local
+whatsapp/.env
+
+# Generated Media / Audio Files
+generated_audio/
+whatsapp/generated_audio/
+*.wav
+*.mp3
+
+# HuggingFace & Pytest Caches
+.cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node / React (for future dashboard)
+node_modules/
+dist/
+build/
+.next/
+
+# IDE & OS
+.vscode/
+.idea/
+*.code-workspace
 .DS_Store
+Thumbs.db
