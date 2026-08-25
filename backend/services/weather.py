@@ -5,7 +5,7 @@ def get_weather_forecast(latitude, longitude):
     params = {
         "latitude": latitude,
         "longitude": longitude,
-        "daily": "precipitation_sum,temperature_2m_max,temperature_2m_min",
+        "daily": "precipitation_sum,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
         "timezone": "Asia/Kolkata",
         "forecast_days": 10
     }
@@ -16,21 +16,25 @@ def get_weather_forecast(latitude, longitude):
     return data
 
 def analyze_forecast(forecast_data):
-    daily=forecast_data['daily']
-    dates=daily['time']
-    rain=daily['precipitation_sum']
-    max_temps=daily['temperature_2m_max']
+    daily = forecast_data["daily"]
+    dates = daily["time"]
+    rain = daily["precipitation_sum"]
+    max_temps = daily["temperature_2m_max"]
+    rain_prob = daily["precipitation_probability_max"]
 
-    total_rain_7_days=sum(rain[:7])
-    max_temp_3_days=max(max_temps[:3])
+    total_rain_7_days = sum(rain[:7])
+    max_temp_3_days = max(max_temps[:3])
+    tomorrow_rain_probability = rain_prob[1] if len(rain_prob) > 1 else rain_prob[0]
 
-    days_until_rain=None
-    for i,amount in enumerate(rain):
-        if amount>=5:
-            days_until_rain=i 
+    days_until_rain = None
+    for i, amount in enumerate(rain):
+        if amount >= 5:
+            days_until_rain = i
             break
+
     return {
         "total_rain_next_7_days_mm": round(total_rain_7_days, 1),
         "max_temp_next_3_days_c": max_temp_3_days,
-        "days_until_meaningful_rain": days_until_rain
+        "days_until_meaningful_rain": days_until_rain,
+        "rain_probability_tomorrow": tomorrow_rain_probability
     }

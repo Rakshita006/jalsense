@@ -128,25 +128,49 @@ def calculate_stress(satellite, weather, crop):
     level = escalate(level)
   return level
 
+def level_to_score_and_bucket(level, satellite, weather):
+    base_scores = {"green": 20, "yellow": 50, "red": 75}
+    score = base_scores[level]
 
-def generate_message(level, village, weather):
+    if level == "red" and (satellite["ndvi"] < 0.3 or weather["max_temp_next_3_days_c"] > 42):
+        score = 90
+
+    if score >= 80:
+        bucket = "critical"
+    elif score >= 60:
+        bucket = "high"
+    elif score >= 35:
+        bucket = "moderate"
+    else:
+        bucket = "low"
+
+    return score, bucket
+
+
+def generate_message(bucket, village, weather):
     days_until_rain = weather["days_until_meaningful_rain"]
 
-    if level == "green":
+    if bucket == "low":
         hindi = f"Namaskar! Aapke {village} ke khet mein pani ki sthiti acchi hai. Abhi sinchai ki zaroorat nahi hai."
         english = f"Your field in {village} has adequate water. No irrigation needed right now."
 
-    elif level == "yellow":
+    elif bucket == "moderate":
         hindi = f"Namaskar! Aapke {village} ke khet mein pani ki kami ho sakti hai. Jald hi sinchai ki taiyari karein."
         english = f"Your field in {village} may face water stress soon. Prepare to irrigate."
 
-    else:
+    elif bucket == "high":
+        hindi = f"Namaskar! Aapke {village} ke khet mein pani ki kami ka risk zyada hai. Jald sinchai karein."
+        english = f"Your field in {village} has a high risk of water stress. Irrigate soon."
+
+    else:  # critical
         hindi = f"Namaskar! Aapke {village} ke khet mein pani ki gambhir kami hai! Turant sinchai karein."
         english = f"Critical water stress detected in your {village} field! Irrigate immediately."
 
-    if days_until_rain is not None and days_until_rain <= 3 and level != "green":
+    if days_until_rain is not None and days_until_rain <= 3 and bucket != "low":
         hindi += f" {days_until_rain} din mein baarish ki sambhavna hai."
         english += f" Rain expected in {days_until_rain} days."
 
     return {"hindi": hindi, "english": english}
+
+
         

@@ -37,7 +37,7 @@ def get_coordinates(village_name, district=None):
     result=data[0]
     return {
       'latitude':float(result['lat']),
-      'longitude': float(result['long']),
+      'longitude': float(result['lon']),
       'resolve_name': result['display_name'],
       'source':'nominatim'
     }
