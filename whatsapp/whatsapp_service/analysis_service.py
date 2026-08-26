@@ -46,28 +46,42 @@ _RISK_TEXT: dict[str, str] = {
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+# def analyze_field(village: str, crop: str) -> AnalysisResult:
+#     """
+#     Analyze water stress for the given village and crop.
+
+#     Currently calls the mock analysis. To connect the real backend,
+#     replace this function body with:
+
+#         import httpx
+#         from whatsapp_service.config import get_settings
+#         settings = get_settings()
+#         async with httpx.AsyncClient(timeout=settings.analysis_api_timeout_seconds) as client:
+#             resp = await client.post(
+#                 settings.analysis_api_url,
+#                 json={"village": village, "crop": crop},
+#             )
+#             resp.raise_for_status()
+#             return AnalysisResult.model_validate(resp.json())
+
+#     The AnalysisResult schema and all downstream code stay unchanged.
+#     """
+#     logger.info("analyze_field | village='%s' | crop='%s'", village, crop)
+#     return run_analysis(village, crop)
+
+
 def analyze_field(village: str, crop: str) -> AnalysisResult:
-    """
-    Analyze water stress for the given village and crop.
+    import requests
+    from whatsapp_service.config import get_settings
 
-    Currently calls the mock analysis. To connect the real backend,
-    replace this function body with:
-
-        import httpx
-        from whatsapp_service.config import get_settings
-        settings = get_settings()
-        async with httpx.AsyncClient(timeout=settings.analysis_api_timeout_seconds) as client:
-            resp = await client.post(
-                settings.analysis_api_url,
-                json={"village": village, "crop": crop},
-            )
-            resp.raise_for_status()
-            return AnalysisResult.model_validate(resp.json())
-
-    The AnalysisResult schema and all downstream code stay unchanged.
-    """
-    logger.info("analyze_field | village='%s' | crop='%s'", village, crop)
-    return run_analysis(village, crop)
+    settings = get_settings()
+    resp = requests.post(
+        settings.analysis_api_url,
+        json={"village": village, "crop": crop},
+        timeout=settings.analysis_api_timeout_seconds,
+    )
+    resp.raise_for_status()
+    return AnalysisResult.model_validate(resp.json())
 
 
 def format_report_hi(result: AnalysisResult) -> str:
