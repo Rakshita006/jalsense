@@ -8,8 +8,18 @@ from database import SessionLocal
 from models import Farmer, Alert
 from sqlalchemy.orm import Session
 from fastapi import FastAPI, Depends
+from datetime import date
+from fastapi.middleware.cors import CORSMiddleware
 
 app=FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 from pydantic import BaseModel
 
@@ -129,4 +139,47 @@ def analyze(request: AnalyzeRequest, db: Session = Depends(get_db)):
         "ndwi": satellite["ndwi"],
         "rain_probability": weather["rain_probability_tomorrow"],
         "recommendation_hi": message["hindi"]
+    }
+
+@app.get("/api/farmers")
+def get_farmers(db: Session= Depends(get_db)):
+    farmers=db.query(Farmer).all()
+
+    result=[]
+    for f in farmers:
+        result.append({
+            "id":f.id,
+            "phone_number":f.phone_number,
+            "village_name":f.village_name,
+            "crop_name":f.crop_name,
+            "latitude":f.latitude,
+            "longitude":f.longitude,
+            "stress_level":f.current_stress_level,
+            "registered_at": f.registered_at.isoformat() if f.registered_at else None
+        })
+
+        return {"farmers":result, "total":len(result)}
+
+@app.get('/api/stats')
+def get_stats(db: Session= Depends(get_db)):
+    total_farmers=db.query(Farmer).count()
+
+    low=db.query(Farmer).filter(Farmer.current_stress_level=='low').count()
+    moderate=db.query(Farmer).filter(Farmer.current_stress_level=='moderate').count()
+    high=db.query(Farmer).filter(Farmer.current_stress_level== 'high').count()
+    critical=db.query(Farmer).filter(Farmer.current_stress_level=='critical').count()
+
+    today=date.today()
+    all_alerts=db.query(Alert).all()
+    alerts_today=[a for a in all_alerts if a.created_at.date()==today]
+
+    return{
+        "total_farmers":total_farmers,
+        "by_stress_level":{
+            "low":low,
+            "moderate":moderate,
+            "high":high,
+            "critical":critical
+        },
+        "alerts_today":len(alerts_today)
     }
