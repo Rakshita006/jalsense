@@ -1,17 +1,10 @@
-"""
-tts_router.py — FastAPI router for TTS development/testing endpoints.
-
-Registered in main.py under the /api prefix.
+﻿"""
+tts_router.py — FastAPI router for TTS endpoints.
 
 Endpoints:
-    POST /api/tts              — generate audio from Hindi text
-    GET  /api/audio/{filename} — serve generated WAV (dev only)
-    POST /api/test-alert       — full pipeline: village+crop → mock analysis
-                                 → recommendation → audio
-
-NOTE: The audio serving endpoint (/api/audio) is for local development ONLY.
-For production / Twilio integration, replace with a cloud storage URL
-(S3, GCS, or Cloudinary) so Twilio can fetch the audio over HTTPS.
+    POST /api/tts         — Generate Hindi audio from arbitrary text
+    GET  /api/audio/{fn}  — Serve a generated audio file (MP3 / WAV)
+    POST /api/test-alert  — Full pipeline test: analysis + recommendation + audio
 """
 
 import logging
@@ -31,8 +24,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-
-# ── Request / Response schemas ────────────────────────────────────────────────
 
 class TTSRequest(BaseModel):
     text: str = Field(
@@ -68,14 +59,9 @@ class AlertResponse(BaseModel):
     error: Optional[str] = None
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
 def _audio_url_for(filename: str) -> str:
-    """Build the /api/audio/<filename> URL."""
     return f"/api/audio/{filename}"
 
-
-# ── POST /api/tts ─────────────────────────────────────────────────────────────
 
 @router.post(
     "/tts",
@@ -84,13 +70,6 @@ def _audio_url_for(filename: str) -> str:
     summary="Generate Hindi audio from text",
 )
 async def generate_tts(request: TTSRequest) -> TTSResponse:
-    """
-    Accept Hindi text and return a URL to a generated WAV file.
-
-    Internally calls HindiTTSService.generate_audio().
-    On first request, the TTS model is loaded (~30 s on CPU).
-    Subsequent requests are faster (model stays in memory).
-    """
     settings = get_settings()
     if not settings.tts_enabled:
         return TTSResponse(success=False, error="TTS is disabled (TTS_ENABLED=false in .env)")
@@ -111,81 +90,54 @@ async def generate_tts(request: TTSRequest) -> TTSResponse:
         return TTSResponse(success=False, error="Voice generation failed")
 
 
-# ── GET /api/audio/{filename} ─────────────────────────────────────────────────
-
 @router.get(
     "/audio/{filename}",
     tags=["tts"],
-    summary="Serve generated audio file (dev only)",
+    summary="Serve generated audio file",
     response_class=FileResponse,
 )
 async def serve_audio(filename: str) -> FileResponse:
-    """
-    Serve a generated WAV file by name.
-
-    FOR LOCAL DEVELOPMENT ONLY. In production, serve audio from
-    cloud storage (S3/GCS) so Twilio can fetch it over public HTTPS.
-
-    Security: directory traversal is blocked.
-    """
     settings = get_settings()
     audio_dir = Path(settings.tts_audio_dir).resolve()
     file_path = (audio_dir / filename).resolve()
 
-    # Block directory traversal attacks (e.g. filename = "../../etc/passwd")
     if not str(file_path).startswith(str(audio_dir)):
         raise HTTPException(status_code=400, detail="Invalid filename")
 
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="Audio file not found")
 
-    logger.info("Serving audio | file=%s", filename)
+    media_type = "audio/mpeg" if filename.endswith(".mp3") else "audio/wav"
+    logger.info("Serving audio | file=%s | media_type=%s", filename, media_type)
     return FileResponse(
         path=str(file_path),
-        media_type="audio/wav",
+        media_type=media_type,
         filename=filename,
     )
 
-
-# ── POST /api/test-alert ──────────────────────────────────────────────────────
 
 @router.post(
     "/test-alert",
     response_model=AlertResponse,
     tags=["tts"],
-    summary="Full pipeline: village + crop → analysis → recommendation → audio",
+    summary="Full pipeline: village + crop -> analysis -> recommendation -> audio",
 )
 async def test_alert(request: AlertRequest) -> AlertResponse:
-    """
-    End-to-end development test endpoint.
-
-    Flow:
-        1. village + crop  →  mock_analysis.run_analysis()
-        2. AnalysisResult  →  recommendation_service.generate_farmer_message()
-        3. Hindi text      →  tts_service.generate_audio()
-        4. Return full result JSON including audio URL
-
-    The text recommendation is ALWAYS returned even if TTS fails,
-    so the caller can still display/send the Hindi text fallback.
-    """
     settings = get_settings()
     logger.info(
         "POST /api/test-alert | village='%s' | crop='%s'",
         request.village, request.crop,
     )
 
-    # ── Step 1: Analysis ──────────────────────────────────────────────────
     try:
         result = analyze_field(request.village, request.crop)
     except Exception as exc:
         logger.exception("Analysis failed: %s", exc)
         raise HTTPException(status_code=500, detail="Analysis backend failed")
 
-    # ── Step 2: Recommendation ────────────────────────────────────────────
     farmer_msg = generate_farmer_message(result)
     text_hi = farmer_msg["text_hi"]
 
-    # ── Step 3: Audio (degrades gracefully on failure) ────────────────────
     audio_url: Optional[str] = None
     error_msg: Optional[str] = None
 

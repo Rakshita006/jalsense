@@ -2,7 +2,8 @@
 main.py — FastAPI application entry point.
 
 Receives Twilio WhatsApp webhooks, routes them through the conversation
-state machine (conversation_handler.py), and returns TwiML responses.
+state machine (conversation_handler.py), and returns TwiML responses
+with embedded native WhatsApp audio notes.
 """
 
 import logging
@@ -33,7 +34,6 @@ def _configure_logging(level: str) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup and shutdown logic."""
     settings = get_settings()
     _configure_logging(settings.log_level)
     logger = logging.getLogger(__name__)
@@ -51,9 +51,9 @@ app = FastAPI(
     title="JalSense WhatsApp Service",
     description=(
         "Agricultural water-stress alert bot for Indian farmers via WhatsApp. "
-        "Receives Twilio webhooks, generates AI4Bharat Hindi voice alerts, and replies in Hindi."
+        "Receives Twilio webhooks, generates natural Hindi voice notes, and replies in Hindi."
     ),
-    version="0.5.0",
+    version="0.6.0",
     lifespan=lifespan,
 )
 
@@ -97,9 +97,11 @@ async def whatsapp_webhook(
 
     twiml_resp = MessagingResponse()
 
-    # Combine multi-part messages into a clean, complete WhatsApp message
+    # Combine multi-part messages into a single complete WhatsApp message
     combined_body = "\n\n".join(replies)
+    msg = twiml_resp.message(combined_body)
 
+    # Attach direct playable native WhatsApp voice note if this is the final report
     if "JalSense Report" in combined_body and settings.tts_enabled:
         stress = "moderate"
         if "Bahut Zyada" in combined_body:
@@ -113,10 +115,9 @@ async def whatsapp_webhook(
         if audio_file:
             base_url = str(settings.webhook_base_url).rstrip("/")
             if base_url and not base_url.startswith("mock://"):
-                audio_link = f"{base_url}/api/audio/{audio_file}"
-                combined_body += f"\n\n🎧 *Awaaz mein sunne ke liye click karein:*\n{audio_link}"
+                media_url = f"{base_url}/api/audio/{audio_file}"
+                msg.media(media_url)
 
-    twiml_resp.message(combined_body)
     twiml_xml = str(twiml_resp)
 
     logger.info(
