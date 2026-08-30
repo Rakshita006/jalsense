@@ -2,7 +2,6 @@
 dynamic_tts.py — Fast on-the-fly Hindi female neural voice generation (<0.3s).
 """
 
-import asyncio
 import hashlib
 import logging
 from pathlib import Path
@@ -14,15 +13,9 @@ _AUDIO_DIR = Path("generated_audio")
 _VOICE = "hi-IN-SwaraNeural"
 
 
-async def _synthesize_async(text: str, file_path: Path) -> None:
-    communicate = edge_tts.Communicate(text, _VOICE)
-    await communicate.save(str(file_path))
-
-
-def generate_speech_for_text(text: str) -> str:
+async def generate_speech_for_text_async(text: str) -> str:
     """
-    Generate speech for exact farmer text dynamically in <0.3s.
-    Caches audio by text hash so identical requests return instantly.
+    Generate speech for exact farmer text dynamically in <0.3s (Async for FastAPI).
     """
     _AUDIO_DIR.mkdir(exist_ok=True)
     text_hash = hashlib.md5(text.encode("utf-8")).hexdigest()[:12]
@@ -30,12 +23,16 @@ def generate_speech_for_text(text: str) -> str:
     file_path = _AUDIO_DIR / filename
 
     if not file_path.exists():
-        logger.info("Synthesizing dynamic speech | text_len=%d | filename=%s", len(text), filename)
-        try:
-            asyncio.run(_synthesize_async(text, file_path))
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            loop.run_until_complete(_synthesize_async(text, file_path))
-            loop.close()
+        logger.info("Synthesizing dynamic speech async | text_len=%d | filename=%s", len(text), filename)
+        communicate = edge_tts.Communicate(text, _VOICE)
+        await communicate.save(str(file_path))
 
     return filename
+
+
+def generate_speech_for_text(text: str) -> str:
+    """
+    Synchronous helper for standalone scripts/tests.
+    """
+    import asyncio
+    return asyncio.run(generate_speech_for_text_async(text))

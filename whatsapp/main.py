@@ -20,7 +20,7 @@ from whatsapp_service.config import get_settings
 from whatsapp_service.conversation import conversation_store
 from whatsapp_service.conversation_handler import handle_message
 from whatsapp_service.twilio_service import validate_twilio_signature
-from whatsapp_service.dynamic_tts import generate_speech_for_text
+from whatsapp_service.dynamic_tts import generate_speech_for_text_async
 from whatsapp_service.recommendation_service import generate_farmer_message
 from whatsapp_service.analysis_service import analyze_field
 from tts_router import router as tts_router
@@ -56,7 +56,7 @@ app = FastAPI(
         "Agricultural water-stress alert bot for Indian farmers via WhatsApp. "
         "Receives Twilio webhooks, generates natural Hindi voice notes, and replies in Hindi."
     ),
-    version="1.0.0",
+    version="1.2.0",
     lifespan=lifespan,
 )
 
@@ -95,36 +95,38 @@ async def whatsapp_webhook(
             detail="Invalid Twilio signature",
         )
 
-    # Capture session before/during handle_message
-    session_before = conversation_store.get(From)
     replies = handle_message(from_number=From, text=Body)
-    session_after = conversation_store.get(From)
+    session = conversation_store.get(From)
     settings = get_settings()
 
     twiml_resp = MessagingResponse()
 
-    # 1. First Message: Full formatted Text Report Card
     combined_body = "\n\n".join(replies)
-    twiml_resp.message(combined_body)
 
-    # 2. Second Message: Exact Dynamic Voice Note for this specific crop & village
     if "JalSense Report" in combined_body and settings.tts_enabled:
-        village = session_after.village if session_after else "Chitrakoot"
-        crop = session_after.crop if session_after else "wheat"
+        village = session.village if session and session.village else "Chitrakoot"
+        crop = session.crop if session and session.crop else "wheat"
 
         try:
             analysis_res = analyze_field(village, crop)
             farmer_msg = generate_farmer_message(analysis_res)["text_hi"]
-            audio_filename = generate_speech_for_text(farmer_msg)
+            audio_filename = await generate_speech_for_text_async(farmer_msg)
 
             base_url = str(settings.webhook_base_url).rstrip("/")
             if base_url and not base_url.startswith("mock://"):
                 media_url = f"{base_url}/api/audio/{audio_filename}"
-                audio_msg = twiml_resp.message()
-                audio_msg.media(media_url)
-                logger.info("Attached exact dynamic audio | crop=%s | file=%s", crop, audio_filename)
+                combined_body += f"\n\n🎧 *Awaaz mein Salah sunne ke liye:* {media_url}"
+                msg1 = twiml_resp.message(combined_body)
+                msg2 = twiml_resp.message("🎙️ *JalSense Voice Note:*")
+                msg2.media(media_url)
+                logger.info("Delivered Report Card + Audio Voice Note for crop=%s file=%s", crop, audio_filename)
+            else:
+                twiml_resp.message(combined_body)
         except Exception as exc:
-            logger.warning("Could not generate exact dynamic audio: %s", exc)
+            logger.exception("Dynamic audio generation failed: %s", exc)
+            twiml_resp.message(combined_body)
+    else:
+        twiml_resp.message(combined_body)
 
     twiml_xml = str(twiml_resp)
 
