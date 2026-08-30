@@ -1,50 +1,36 @@
-"""
+﻿"""
 recommendation_service.py — Converts an AnalysisResult into a short,
 farmer-friendly Hindi sentence suitable for TTS narration.
-
-Design rules:
-    - No technical terms (no NDVI, NDWI, stress_score)
-    - Crop name spoken in Hindi/Hinglish (gehun, dhaan, sarson…)
-    - Rain-probability override: if significant rain expected (>=40%),
-      do NOT blindly recommend irrigation
-    - 4 stress levels × 2 rain scenarios = 8 templates
-    - Always starts with "Namaste."
-
-Public API:
-    generate_farmer_message(result: AnalysisResult) -> FarmerMessage
-    Returns: {"text_hi": "Namaste. Aapke khet mein..."}
 """
 
 import logging
 from typing import TypedDict
-
 from whatsapp_service.mock_analysis import AnalysisResult
 
 logger = logging.getLogger(__name__)
 
-# Rain probability threshold (%) above which we suggest waiting for rain
 RAIN_THRESHOLD: int = 40
 
-
-# ── Crop name map (canonical English → Hindi/Hinglish for TTS) ───────────────
 _CROP_HINDI: dict[str, str] = {
-    "wheat":     "gehun",
-    "rice":      "dhaan",
-    "maize":     "makka",
-    "sugarcane": "ganna",
-    "soybean":   "soyabean",
-    "cotton":    "kapas",
-    "mustard":   "sarson",
-    "chickpea":  "chana",
+    "wheat":         "gehun",
+    "rice":          "dhaan",
+    "maize":         "makka",
+    "pearl_millet":  "bajra",
+    "sorghum":       "jowar",
+    "sugarcane":     "ganna",
+    "soybean":       "soyabean",
+    "cotton":        "kapas",
+    "mustard":       "sarson",
+    "chickpea":      "chana",
+    "potato":        "aloo",
+    "onion":         "pyaaz",
+    "groundnut":     "moongfali",
 }
 
 
 class FarmerMessage(TypedDict):
     text_hi: str
 
-
-# ── Message templates ─────────────────────────────────────────────────────────
-# Placeholder: {crop_hi}  — Hindi/Hinglish crop name
 
 _TEMPLATES_DRY: dict[str, str] = {
     "low": (
@@ -91,24 +77,7 @@ _TEMPLATES_RAIN: dict[str, str] = {
 }
 
 
-# ── Public API ────────────────────────────────────────────────────────────────
-
 def generate_farmer_message(result: AnalysisResult) -> FarmerMessage:
-    """
-    Convert an AnalysisResult into a short, farmer-friendly Hindi TTS message.
-
-    The message:
-    - Uses Hindi crop name (not the English canonical)
-    - Avoids technical indices (NDVI, NDWI, stress_score)
-    - Accounts for upcoming rain to avoid wasteful irrigation advice
-    - Is 1–3 sentences (15–25 seconds when spoken)
-
-    Args:
-        result: AnalysisResult from mock_analysis or the real backend API.
-
-    Returns:
-        FarmerMessage dict: {"text_hi": "<Hindi sentence>"}
-    """
     crop_hi = _CROP_HINDI.get(result.crop, result.crop)
     rain_expected = result.rain_probability >= RAIN_THRESHOLD
     level = result.stress_level

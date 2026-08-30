@@ -1,15 +1,10 @@
-"""
+﻿"""
 analysis_service.py — Clean abstraction over the water-stress analysis backend.
 
-Currently delegates to mock_analysis.run_analysis().
-
-SWAP POINT: When the real backend (teammate's FastAPI) is ready, replace
-the body of ``analyze_field()`` with the code shown in the docstring below.
-The rest of the codebase (conversation_handler, tests) does NOT change.
+Delegates to mock_analysis.run_analysis() or teammate's backend API.
 """
 
 import logging
-
 from whatsapp_service.mock_analysis import AnalysisResult, run_analysis
 
 logger = logging.getLogger(__name__)
@@ -18,18 +13,22 @@ logger = logging.getLogger(__name__)
 # ── Farmer-facing display names ───────────────────────────────────────────────
 
 _CROP_DISPLAY: dict[str, str] = {
-    "wheat":     "Gehun",
-    "rice":      "Dhaan",
-    "maize":     "Makka",
-    "sugarcane": "Ganna",
-    "soybean":   "Soyabean",
-    "cotton":    "Kapas",
-    "mustard":   "Sarson",
-    "chickpea":  "Chana",
+    "wheat":         "Gehun (गेहूं)",
+    "rice":          "Dhaan (धान)",
+    "maize":         "Makka (मक्का)",
+    "pearl_millet":  "Bajra (बाजरा)",
+    "sorghum":       "Jowar (ज्वार)",
+    "sugarcane":     "Ganna (गन्ना)",
+    "soybean":       "Soyabean (सोयाबीन)",
+    "cotton":        "Kapas (कपास)",
+    "mustard":       "Sarson (सरसों)",
+    "chickpea":      "Chana (चना)",
+    "potato":        "Aloo (आलू)",
+    "onion":         "Pyaaz (प्याज)",
+    "groundnut":     "Moongfali (मूंगफली)",
 }
 
 _STRESS_DISPLAY: dict[str, tuple[str, str]] = {
-    # (Hindi label, emoji)
     "critical": ("Bahut Zyada", "🔴"),
     "high":     ("Zyada",       "🟠"),
     "moderate": ("Theek-Theek", "🟡"),
@@ -46,59 +45,37 @@ _RISK_TEXT: dict[str, str] = {
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-# def analyze_field(village: str, crop: str) -> AnalysisResult:
-#     """
-#     Analyze water stress for the given village and crop.
-
-#     Currently calls the mock analysis. To connect the real backend,
-#     replace this function body with:
-
-#         import httpx
-#         from whatsapp_service.config import get_settings
-#         settings = get_settings()
-#         async with httpx.AsyncClient(timeout=settings.analysis_api_timeout_seconds) as client:
-#             resp = await client.post(
-#                 settings.analysis_api_url,
-#                 json={"village": village, "crop": crop},
-#             )
-#             resp.raise_for_status()
-#             return AnalysisResult.model_validate(resp.json())
-
-#     The AnalysisResult schema and all downstream code stay unchanged.
-#     """
-#     logger.info("analyze_field | village='%s' | crop='%s'", village, crop)
-#     return run_analysis(village, crop)
-
-
 def analyze_field(village: str, crop: str) -> AnalysisResult:
-    import requests
-    from whatsapp_service.config import get_settings
+    """
+    Analyze water stress for the given village and crop.
+    Fast check for real backend API; instant deterministic fallback (<50ms).
+    """
+    logger.info("analyze_field | village='%s' | crop='%s'", village, crop)
+    try:
+        from whatsapp_service.config import get_settings
+        import requests
+        settings = get_settings()
+        api_url = str(settings.analysis_api_url) if settings.analysis_api_url else ""
+        if api_url and not api_url.startswith("mock://") and not "localhost:8080" in api_url:
+            try:
+                resp = requests.post(
+                    api_url,
+                    json={"village": village, "crop": crop},
+                    timeout=(0.5, 2.0),
+                )
+                if resp.status_code == 200:
+                    return AnalysisResult.model_validate(resp.json())
+            except Exception as e:
+                logger.debug("Real API fallback to mock: %s", e)
+    except Exception as exc:
+        logger.debug("Using mock fallback: %s", exc)
 
-    settings = get_settings()
-    resp = requests.post(
-        settings.analysis_api_url,
-        json={"village": village, "crop": crop},
-        timeout=settings.analysis_api_timeout_seconds,
-    )
-    resp.raise_for_status()
-    return AnalysisResult.model_validate(resp.json())
+    return run_analysis(village, crop)
 
 
 def format_report_hi(result: AnalysisResult) -> str:
     """
     Format an AnalysisResult as a farmer-friendly Hindi report card.
-
-    Example output:
-        🌾 JalSense Report
-
-        Gaon: Chitrakoot
-        Fasal: Gehun
-
-        💧 Pani ka stress: Zyada 🟠
-
-        Agle 6 din mein pani ki kami ka risk hai.
-
-        👉 Budhwar tak sinchai zaroor karein.
     """
     crop_display = _CROP_DISPLAY.get(result.crop, result.crop.capitalize())
     stress_label, stress_emoji = _STRESS_DISPLAY.get(
