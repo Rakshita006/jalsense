@@ -184,3 +184,16 @@ def get_stats(db: Session= Depends(get_db)):
         },
         "alerts_today":len(alerts_today)
     }
+
+@app.delete("/api/farmers/{farmer_id}")
+def delete_farmer(farmer_id: int, db: Session = Depends(get_db)):
+    farmer = db.query(Farmer).filter(Farmer.id == farmer_id).first()
+
+    if farmer is None:
+        return {"error": f"No farmer found with id {farmer_id}"}
+
+    db.query(Alert).filter(Alert.farmer_id == farmer_id).delete()
+    db.delete(farmer)
+    db.commit()
+
+    return {"message": f"Farmer {farmer_id} deleted successfully"}

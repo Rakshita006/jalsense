@@ -50,6 +50,15 @@ function App() {
     }
   };
 
+  const handleDelete = async (farmerId) => {
+  try {
+    await axios.delete(`http://127.0.0.1:8000/api/farmers/${farmerId}`);
+    fetchDashboardData();
+  } catch (err) {
+    console.error('Delete failed', err);
+  }
+};
+
   const stressColor = {
     low: 'bg-green-100 text-green-800 border-green-400',
     moderate: 'bg-yellow-100 text-yellow-800 border-yellow-400',
@@ -62,7 +71,7 @@ function App() {
       <h1 className="text-3xl font-bold text-gray-800">🌾 JalSense Live Demo</h1>
 
       <Stats stats={stats} />
-      <FarmerFeed farmers={farmers} loading={dashboardLoading} />
+      <FarmerFeed farmers={farmers} loading={dashboardLoading} onDelete={handleDelete}/>
       <FarmersMap farmers={farmers} />
 
       <div>
