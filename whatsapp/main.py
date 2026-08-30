@@ -2,8 +2,7 @@
 main.py — FastAPI application entry point.
 
 Receives Twilio WhatsApp webhooks, routes them through the conversation
-state machine (conversation_handler.py), and returns TwiML responses
-with embedded native WhatsApp audio notes.
+state machine, and sends both the text report card AND the native voice note.
 """
 
 import logging
@@ -11,9 +10,10 @@ import sys
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, Form, HTTPException, Request, Response, status
+from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse, PlainTextResponse
 from twilio.twiml.messaging_response import MessagingResponse
+from twilio.rest import Client as TwilioClient
 
 from whatsapp_service.config import get_settings
 from whatsapp_service.conversation import conversation_store
@@ -53,13 +53,29 @@ app = FastAPI(
         "Agricultural water-stress alert bot for Indian farmers via WhatsApp. "
         "Receives Twilio webhooks, generates natural Hindi voice notes, and replies in Hindi."
     ),
-    version="0.6.0",
+    version="0.7.0",
     lifespan=lifespan,
 )
 
 app.include_router(tts_router, prefix="/api", tags=["tts"])
 
 logger = logging.getLogger(__name__)
+
+
+def _send_audio_note_task(to_number: str, media_url: str) -> None:
+    """Send the voice note as a dedicated WhatsApp audio bubble via Twilio REST API."""
+    settings = get_settings()
+    try:
+        if settings.twilio_account_sid and settings.twilio_auth_token:
+            client = TwilioClient(settings.twilio_account_sid, settings.twilio_auth_token)
+            client.messages.create(
+                from_=settings.twilio_whatsapp_from,
+                to=to_number,
+                media_url=[media_url],
+            )
+            logger.info("Voice note audio bubble sent to %s | media=%s", to_number, media_url)
+    except Exception as exc:
+        logger.warning("Could not send async audio note via Twilio REST API: %s", exc)
 
 
 @app.get("/health", tags=["ops"])
@@ -79,6 +95,7 @@ async def health_check() -> dict[str, Any]:
 )
 async def whatsapp_webhook(
     request: Request,
+    background_tasks: BackgroundTasks,
     Body: str = Form(default=""),
     From: str = Form(default=""),
     To: str = Form(default=""),
@@ -97,11 +114,11 @@ async def whatsapp_webhook(
 
     twiml_resp = MessagingResponse()
 
-    # Combine multi-part messages into a single complete WhatsApp message
+    # 1. Send the full formatted text report card
     combined_body = "\n\n".join(replies)
-    msg = twiml_resp.message(combined_body)
+    twiml_resp.message(combined_body)
 
-    # Attach direct playable native WhatsApp voice note if this is the final report
+    # 2. If report card was sent, trigger the playable WhatsApp voice note in background
     if "JalSense Report" in combined_body and settings.tts_enabled:
         stress = "moderate"
         if "Bahut Zyada" in combined_body:
@@ -116,13 +133,13 @@ async def whatsapp_webhook(
             base_url = str(settings.webhook_base_url).rstrip("/")
             if base_url and not base_url.startswith("mock://"):
                 media_url = f"{base_url}/api/audio/{audio_file}"
-                msg.media(media_url)
+                background_tasks.add_task(_send_audio_note_task, From, media_url)
 
     twiml_xml = str(twiml_resp)
 
     logger.info(
-        "Reply sent | to=%s | messages=1 | first_80='%.80s'",
-        From, combined_body[:80],
+        "Reply sent | to=%s | text_len=%d",
+        From, len(combined_body),
     )
     return Response(content=twiml_xml, media_type="text/xml")
 
