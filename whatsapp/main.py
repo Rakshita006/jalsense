@@ -4,7 +4,7 @@ main.py — FastAPI application entry point.
 Receives Twilio WhatsApp webhooks, routes them through the conversation
 state machine, and sends BOTH:
   1. The full formatted Hindi Report Card (Text bubble)
-  2. The playable native Voice Note (Audio bubble)
+  2. The custom, dynamic Voice Note speaking the exact crop and advisory (Audio bubble)
 """
 
 import logging
@@ -20,7 +20,9 @@ from whatsapp_service.config import get_settings
 from whatsapp_service.conversation import conversation_store
 from whatsapp_service.conversation_handler import handle_message
 from whatsapp_service.twilio_service import validate_twilio_signature
-from whatsapp_service.audio_mapper import get_audio_filename_for_stress
+from whatsapp_service.dynamic_tts import generate_speech_for_text
+from whatsapp_service.recommendation_service import generate_farmer_message
+from whatsapp_service.analysis_service import analyze_field
 from tts_router import router as tts_router
 
 
@@ -54,7 +56,7 @@ app = FastAPI(
         "Agricultural water-stress alert bot for Indian farmers via WhatsApp. "
         "Receives Twilio webhooks, generates natural Hindi voice notes, and replies in Hindi."
     ),
-    version="0.9.0",
+    version="1.0.0",
     lifespan=lifespan,
 )
 
@@ -93,7 +95,10 @@ async def whatsapp_webhook(
             detail="Invalid Twilio signature",
         )
 
+    # Capture session before/during handle_message
+    session_before = conversation_store.get(From)
     replies = handle_message(from_number=From, text=Body)
+    session_after = conversation_store.get(From)
     settings = get_settings()
 
     twiml_resp = MessagingResponse()
@@ -102,23 +107,24 @@ async def whatsapp_webhook(
     combined_body = "\n\n".join(replies)
     twiml_resp.message(combined_body)
 
-    # 2. Second Message: Native Playable Voice Note Audio Bubble
+    # 2. Second Message: Exact Dynamic Voice Note for this specific crop & village
     if "JalSense Report" in combined_body and settings.tts_enabled:
-        stress = "moderate"
-        if "Bahut Zyada" in combined_body:
-            stress = "critical"
-        elif "Zyada" in combined_body:
-            stress = "high"
-        elif "Sahi" in combined_body:
-            stress = "low"
+        village = session_after.village if session_after else "Chitrakoot"
+        crop = session_after.crop if session_after else "wheat"
 
-        audio_file = get_audio_filename_for_stress(stress)
-        if audio_file:
+        try:
+            analysis_res = analyze_field(village, crop)
+            farmer_msg = generate_farmer_message(analysis_res)["text_hi"]
+            audio_filename = generate_speech_for_text(farmer_msg)
+
             base_url = str(settings.webhook_base_url).rstrip("/")
             if base_url and not base_url.startswith("mock://"):
-                media_url = f"{base_url}/api/audio/{audio_file}"
+                media_url = f"{base_url}/api/audio/{audio_filename}"
                 audio_msg = twiml_resp.message()
                 audio_msg.media(media_url)
+                logger.info("Attached exact dynamic audio | crop=%s | file=%s", crop, audio_filename)
+        except Exception as exc:
+            logger.warning("Could not generate exact dynamic audio: %s", exc)
 
     twiml_xml = str(twiml_resp)
 
