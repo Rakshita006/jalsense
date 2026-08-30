@@ -2,7 +2,9 @@
 main.py — FastAPI application entry point.
 
 Receives Twilio WhatsApp webhooks, routes them through the conversation
-state machine, and returns the complete text report card with direct audio playback link.
+state machine, and sends BOTH:
+  1. The full formatted Hindi Report Card (Text bubble)
+  2. The playable native Voice Note (Audio bubble)
 """
 
 import logging
@@ -52,7 +54,7 @@ app = FastAPI(
         "Agricultural water-stress alert bot for Indian farmers via WhatsApp. "
         "Receives Twilio webhooks, generates natural Hindi voice notes, and replies in Hindi."
     ),
-    version="0.8.0",
+    version="0.9.0",
     lifespan=lifespan,
 )
 
@@ -96,9 +98,11 @@ async def whatsapp_webhook(
 
     twiml_resp = MessagingResponse()
 
-    # Combine into a single clean message
+    # 1. First Message: Full formatted Text Report Card
     combined_body = "\n\n".join(replies)
+    twiml_resp.message(combined_body)
 
+    # 2. Second Message: Native Playable Voice Note Audio Bubble
     if "JalSense Report" in combined_body and settings.tts_enabled:
         stress = "moderate"
         if "Bahut Zyada" in combined_body:
@@ -112,10 +116,10 @@ async def whatsapp_webhook(
         if audio_file:
             base_url = str(settings.webhook_base_url).rstrip("/")
             if base_url and not base_url.startswith("mock://"):
-                audio_link = f"{base_url}/api/audio/{audio_file}"
-                combined_body += f"\n\n🎧 *Awaaz mein Salah sunne ke liye click karein:*\n{audio_link}"
+                media_url = f"{base_url}/api/audio/{audio_file}"
+                audio_msg = twiml_resp.message()
+                audio_msg.media(media_url)
 
-    twiml_resp.message(combined_body)
     twiml_xml = str(twiml_resp)
 
     logger.info(
