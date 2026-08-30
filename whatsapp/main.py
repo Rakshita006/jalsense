@@ -53,7 +53,7 @@ app = FastAPI(
         "Agricultural water-stress alert bot for Indian farmers via WhatsApp. "
         "Receives Twilio webhooks, generates AI4Bharat Hindi voice alerts, and replies in Hindi."
     ),
-    version="0.4.0",
+    version="0.5.0",
     lifespan=lifespan,
 )
 
@@ -97,10 +97,8 @@ async def whatsapp_webhook(
 
     twiml_resp = MessagingResponse()
 
-    # Combine multi-part replies into a single complete WhatsApp message
-    # so Twilio WhatsApp sandbox delivers the full report card without dropping parts.
+    # Combine multi-part messages into a clean, complete WhatsApp message
     combined_body = "\n\n".join(replies)
-    msg = twiml_resp.message(combined_body)
 
     if "JalSense Report" in combined_body and settings.tts_enabled:
         stress = "moderate"
@@ -115,8 +113,10 @@ async def whatsapp_webhook(
         if audio_file:
             base_url = str(settings.webhook_base_url).rstrip("/")
             if base_url and not base_url.startswith("mock://"):
-                msg.media(f"{base_url}/api/audio/{audio_file}")
+                audio_link = f"{base_url}/api/audio/{audio_file}"
+                combined_body += f"\n\n🎧 *Awaaz mein sunne ke liye click karein:*\n{audio_link}"
 
+    twiml_resp.message(combined_body)
     twiml_xml = str(twiml_resp)
 
     logger.info(
