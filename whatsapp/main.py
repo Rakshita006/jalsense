@@ -2,9 +2,7 @@
 main.py — FastAPI application entry point.
 
 Receives Twilio WhatsApp webhooks, routes them through the conversation
-state machine, and sends BOTH:
-  1. The full formatted Hindi Report Card (Text bubble)
-  2. The custom, dynamic Voice Note speaking the exact crop and advisory (Audio bubble)
+state machine, and delivers the native playable voice note audio message.
 """
 
 import logging
@@ -56,7 +54,7 @@ app = FastAPI(
         "Agricultural water-stress alert bot for Indian farmers via WhatsApp. "
         "Receives Twilio webhooks, generates natural Hindi voice notes, and replies in Hindi."
     ),
-    version="1.2.0",
+    version="1.3.0",
     lifespan=lifespan,
 )
 
@@ -100,7 +98,6 @@ async def whatsapp_webhook(
     settings = get_settings()
 
     twiml_resp = MessagingResponse()
-
     combined_body = "\n\n".join(replies)
 
     if "JalSense Report" in combined_body and settings.tts_enabled:
@@ -115,15 +112,14 @@ async def whatsapp_webhook(
             base_url = str(settings.webhook_base_url).rstrip("/")
             if base_url and not base_url.startswith("mock://"):
                 media_url = f"{base_url}/api/audio/{audio_filename}"
-                combined_body += f"\n\n🎧 *Awaaz mein Salah sunne ke liye:* {media_url}"
-                msg1 = twiml_resp.message(combined_body)
-                msg2 = twiml_resp.message("🎙️ *JalSense Voice Note:*")
-                msg2.media(media_url)
-                logger.info("Delivered Report Card + Audio Voice Note for crop=%s file=%s", crop, audio_filename)
+                # Attach direct playable audio file in the primary message
+                msg = twiml_resp.message()
+                msg.media(media_url)
+                logger.info("Delivering direct playable voice note audio | crop=%s | file=%s", crop, audio_filename)
             else:
                 twiml_resp.message(combined_body)
         except Exception as exc:
-            logger.exception("Dynamic audio generation failed: %s", exc)
+            logger.exception("Audio generation failed: %s", exc)
             twiml_resp.message(combined_body)
     else:
         twiml_resp.message(combined_body)
