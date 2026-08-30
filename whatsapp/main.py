@@ -2,7 +2,7 @@
 main.py — FastAPI application entry point.
 
 Receives Twilio WhatsApp webhooks, routes them through the conversation
-state machine, and delivers the native playable voice note audio message.
+state machine, and delivers the full report card with media voice audio.
 """
 
 import logging
@@ -54,7 +54,7 @@ app = FastAPI(
         "Agricultural water-stress alert bot for Indian farmers via WhatsApp. "
         "Receives Twilio webhooks, generates natural Hindi voice notes, and replies in Hindi."
     ),
-    version="1.3.0",
+    version="1.4.0",
     lifespan=lifespan,
 )
 
@@ -100,6 +100,9 @@ async def whatsapp_webhook(
     twiml_resp = MessagingResponse()
     combined_body = "\n\n".join(replies)
 
+    msg = twiml_resp.message()
+    msg.body(combined_body)
+
     if "JalSense Report" in combined_body and settings.tts_enabled:
         village = session.village if session and session.village else "Chitrakoot"
         crop = session.crop if session and session.crop else "wheat"
@@ -112,17 +115,10 @@ async def whatsapp_webhook(
             base_url = str(settings.webhook_base_url).rstrip("/")
             if base_url and not base_url.startswith("mock://"):
                 media_url = f"{base_url}/api/audio/{audio_filename}"
-                # Attach direct playable audio file in the primary message
-                msg = twiml_resp.message()
                 msg.media(media_url)
-                logger.info("Delivering direct playable voice note audio | crop=%s | file=%s", crop, audio_filename)
-            else:
-                twiml_resp.message(combined_body)
+                logger.info("Attached audio media to WhatsApp reply | crop=%s | file=%s", crop, audio_filename)
         except Exception as exc:
             logger.exception("Audio generation failed: %s", exc)
-            twiml_resp.message(combined_body)
-    else:
-        twiml_resp.message(combined_body)
 
     twiml_xml = str(twiml_resp)
 
