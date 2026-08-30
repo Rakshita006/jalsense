@@ -144,6 +144,7 @@ def analyze(request: AnalyzeRequest, db: Session = Depends(get_db)):
 @app.get("/api/farmers")
 def get_farmers(db: Session= Depends(get_db)):
     farmers=db.query(Farmer).all()
+    print(f"DEBUG: /api/farmers query returned {len(farmers)} farmers")
 
     result=[]
     for f in farmers:
@@ -158,7 +159,7 @@ def get_farmers(db: Session= Depends(get_db)):
             "registered_at": f.registered_at.isoformat() if f.registered_at else None
         })
 
-        return {"farmers":result, "total":len(result)}
+    return {"farmers":result, "total":len(result)}
 
 @app.get('/api/stats')
 def get_stats(db: Session= Depends(get_db)):
